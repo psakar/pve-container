@@ -23,6 +23,7 @@ use PVE::Exception qw(raise_perm_exc);
 use PVE::Firewall::Helpers;
 use PVE::GuestHelpers qw(check_vnet_access safe_string_ne safe_num_ne safe_boolean_ne);
 use PVE::INotify;
+use PVE::InitSystem;
 use PVE::JSONSchema qw(get_standard_option);
 use PVE::Network;
 use PVE::ProcFSTools;
@@ -3184,12 +3185,19 @@ sub vm_start {
 
     my $is_debug = $debug || (!defined($debug) && $conf->{debug});
     my $base_unit = $is_debug ? 'pve-container-debug' : 'pve-container';
-
-    my $cmd = ['systemctl', 'start', "$base_unit\@$vmid"];
+    my $unit = "$base_unit\@$vmid";
 
     PVE::GuestHelpers::exec_hookscript($conf, $vmid, 'pre-start', 1);
     eval {
-        run_command($cmd);
+        # Init systems without the pve-container@ template services (e.g. sysvinit or OpenRC,
+        # see the pkg.pve-container.lsbservice build profile) get the container run by
+        # pve-container-supervise, which does the same as the services.
+        if (PVE::InitSystem::service_status($unit)->{load_state} ne 'not-found') {
+            PVE::InitSystem::start_service($unit);
+        } else {
+            run_command(
+                ['/usr/share/lxc/pve-container-supervise', $vmid, $is_debug ? ('--debug') : ()]);
+        }
 
         monitor_start($monitor_socket, $vmid) if defined($monitor_socket);
 

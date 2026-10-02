@@ -50,6 +50,7 @@ install: pct lxc-pve.conf pct.1 pct.conf.5 pct.bash-completion pct.zsh-completio
 	install -d $(LXC_SCRIPT_DIR)
 	install -m 0755 lxcnetaddbr $(LXC_SCRIPT_DIR)
 	install -m 0755 pve-container-stop-wrapper $(LXC_SCRIPT_DIR)
+	install -m 0755 pve-container-supervise $(LXC_SCRIPT_DIR)
 	install -d -m0755 $(SERVICEDIR)
 	install -m0644 pve-container@.service $(SERVICEDIR)/
 	install -m0644 pve-container-debug@.service $(SERVICEDIR)/

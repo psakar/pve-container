@@ -1,0 +1,55 @@
+#!/usr/bin/perl
+
+# Run a container without systemd, e.g. with sysvinit or OpenRC: what
+# pve-container@.service (or pve-container-debug@.service) and
+# pve-container-stop-wrapper do with systemd. Used by PVE::LXC::vm_start if the
+# init system doesn't provide those services.
+#
+# Detaches from the caller and returns right away, like the services'
+# Type=simple, then runs 'lxc-start -F' with stdout discarded and stderr going
+# to /run/pve/ct-<vmid>.stderr, and starts it again as long as the container
+# requested a reboot (see lxc-pve-poststop-hook).
+
+use strict;
+use warnings;
+
+use POSIX ();
+
+my ($vmid, $debug) = @ARGV;
+die "usage: $0 <vmid> [--debug]\n"
+    if !defined($vmid) || $vmid !~ m/^\d+$/ || (defined($debug) && $debug ne '--debug');
+
+my @cmd = ('lxc-start', '-F', '-n', $vmid);
+push @cmd, '-o', '/dev/stderr', '-l', 'DEBUG' if defined($debug);
+
+# double fork into an own session, so that the container isn't the caller's
+# child and has no controlling terminal
+my $pid = fork() // die "fork failed - $!\n";
+exit(0) if $pid;
+POSIX::setsid();
+$pid = fork() // die "fork failed - $!\n";
+POSIX::_exit(0) if $pid;
+
+chdir('/');
+open(STDIN, '<', '/dev/null');
+open(STDOUT, '>', '/dev/null'); # StandardOutput=null
+open(STDERR, '>>', "/run/pve/ct-$vmid.stderr") # StandardError=file:...
+    or POSIX::_exit(1);
+
+while (1) {
+    my $child = fork() // POSIX::_exit(1);
+    if (!$child) {
+        exec { $cmd[0] } @cmd or do {
+            print STDERR "failed to execute lxc-start - $!\n";
+            POSIX::_exit(127);
+        };
+    }
+    waitpid($child, 0);
+
+    # same checks as pve-container-stop-wrapper: restart only if rebooted from
+    # within the container, and if it still exists
+    last if !-e "/etc/pve/lxc/${vmid}.conf";
+    last if !unlink("/var/lib/lxc/$vmid/reboot");
+}
+
+POSIX::_exit(0);
