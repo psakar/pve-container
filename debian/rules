@@ -9,11 +9,27 @@
 # Uncomment this to turn on verbose mode.
 #export DH_VERBOSE=1
 
+# The pkg.pve-container.lsbservice build profile is for Devuan and other
+# systemd-free Debian derivatives (see pve-common's and pve-manager's
+# pkg.*.lsbservice profiles): it doesn't install the pve-container@ units,
+# containers get run by pve-container-supervise then. To build this variant,
+# run:
+#   dpkg-buildpackage -b -us -uc -Ppkg.pve-container.lsbservice
+ifneq (,$(filter pkg.pve-container.lsbservice,$(DEB_BUILD_PROFILES)))
+export PVE_INIT_SYSTEM = lsbservice
+else
+export PVE_INIT_SYSTEM = systemd
+endif
+
 %:
 	dh $@
 
+ifeq ($(PVE_INIT_SYSTEM),lsbservice)
+override_dh_installsystemd:
+else
 override_dh_installsystemd:
 	dh_installsystemd -ppve-container --no-start --no-enable --no-restart-after-upgrade -r 'system-pve\x2dcontainer.slice'
+endif
 
 override_dh_install:
 	dh_apparmor -p pve-container --profile-name=pve-container-mounthotplug

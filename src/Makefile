@@ -40,6 +40,15 @@ pct.zsh-completion:
 check: test
 	make -C test
 
+# Which init system the services are integrated with: 'systemd' installs the
+# pve-container@ units, 'lsbservice' doesn't - containers get run by
+# pve-container-supervise then. Set by debian/rules depending on whether the
+# pkg.pve-container.lsbservice build profile is active.
+PVE_INIT_SYSTEM ?= systemd
+ifeq ($(filter $(PVE_INIT_SYSTEM),systemd lsbservice),)
+$(error unsupported PVE_INIT_SYSTEM '$(PVE_INIT_SYSTEM)' (expected 'systemd' or 'lsbservice'))
+endif
+
 .PHONY: install
 install: pct lxc-pve.conf pct.1 pct.conf.5 pct.bash-completion pct.zsh-completion \
     pve-userns.seccomp pve-container@.service pve-container-debug@.service \
@@ -51,10 +60,12 @@ install: pct lxc-pve.conf pct.1 pct.conf.5 pct.bash-completion pct.zsh-completio
 	install -m 0755 lxcnetaddbr $(LXC_SCRIPT_DIR)
 	install -m 0755 pve-container-stop-wrapper $(LXC_SCRIPT_DIR)
 	install -m 0755 pve-container-supervise $(LXC_SCRIPT_DIR)
+ifneq ($(PVE_INIT_SYSTEM),lsbservice)
 	install -d -m0755 $(SERVICEDIR)
 	install -m0644 pve-container@.service $(SERVICEDIR)/
 	install -m0644 pve-container-debug@.service $(SERVICEDIR)/
 	install -m0644 'system-pve\x2dcontainer.slice' $(SERVICEDIR)/
+endif
 	install -d $(LXC_HOOK_DIR)
 	install -m 0755 lxc-pve-prestart-hook $(LXC_HOOK_DIR)
 	install -m 0755 lxc-pve-autodev-hook $(LXC_HOOK_DIR)
