@@ -1,3 +1,11 @@
+pve-container (6.1.14+devuan1) trixie; urgency=medium
+
+  * build for systemd-free derivatives like Devuan (sysvinit or OpenRC),
+    with the init-system changes of the feature/init-systems-refactoring
+    branch; built with the pkg.pve-container.lsbservice profile
+
+ -- Petr Sakař <petr.sakar@chare.eu>  Sat, 03 Oct 2026 08:15:11 +0200
+
 pve-container (6.1.14) trixie; urgency=medium
 
   * fix #7148: reassign volume: check the target container's protection flag
