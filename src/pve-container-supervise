@@ -8,12 +8,21 @@
 # Detaches from the caller and returns right away, like the services'
 # Type=simple, then runs 'lxc-start -F' with stdout discarded and stderr going
 # to /run/pve/ct-<vmid>.stderr, and starts it again as long as the container
-# requested a reboot (see lxc-pve-poststop-hook).
+# requested a reboot (see lxc-pve-poststop-hook). Runs in its own cgroup, the
+# resource scope pve-container.slice/<vmid>.scope, like the service has its own
+# one: otherwise it would stay in its caller's, e.g. pvedaemon's or a login
+# session's, and get killed with it (OpenRC's rc_cgroup_cleanup, elogind's
+# KillUserProcesses).
 
 use strict;
 use warnings;
 
 use POSIX ();
+
+use PVE::CGroup;
+use PVE::InitSystem;
+use PVE::ProcFSTools;
+use PVE::Tools;
 
 my ($vmid, $debug) = @ARGV;
 die "usage: $0 <vmid> [--debug]\n"
@@ -36,6 +45,14 @@ open(STDOUT, '>', '/dev/null'); # StandardOutput=null
 open(STDERR, '>>', "/run/pve/ct-$vmid.stderr") # StandardError=file:...
     or POSIX::_exit(1);
 
+my $scope = "$vmid.scope";
+my $slice = 'pve-container.slice';
+eval {
+    PVE::InitSystem::enter_systemd_scope(
+        $vmid, "PVE LXC container $vmid supervisor", Slice => $slice);
+};
+warn "failed to enter cgroup $slice/$scope, staying in the caller's - $@" if $@;
+
 while (1) {
     my $child = fork() // POSIX::_exit(1);
     if (!$child) {
@@ -51,5 +68,16 @@ while (1) {
     last if !-e "/etc/pve/lxc/${vmid}.conf";
     last if !unlink("/var/lib/lxc/$vmid/reboot");
 }
+
+# Remove the scope, which only gets empty once we're out of it: move to the
+# root cgroup, the only one besides leaves that may hold processes.
+eval {
+    my ($cgroup) = PVE::Tools::file_get_contents('/proc/self/cgroup') =~ m/^0::(\/\S*\/\Q$scope\E)$/m;
+    if (defined($cgroup) && PVE::CGroup::cgroup_mode() == 2) {
+        my $base = PVE::CGroup::cgroupv2_base_path();
+        PVE::ProcFSTools::write_proc_entry("$base/cgroup.procs", "$$");
+        rmdir("$base$cgroup");
+    }
+};
 
 POSIX::_exit(0);
